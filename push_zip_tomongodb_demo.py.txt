@@ -1,0 +1,15 @@
+import sys
+import os
+from hatespeechclassification.configuration.mongodb import MongoDB
+
+# Configuration
+config = {
+    "mongo_uri": "mongodb+srv://subha:Sugan0510@cluster0.f05of.mongodb.net/",
+    "db_name": "nlp"
+}
+
+# File paths
+zip_file_path = r'C:\Users\subha\nlp_pipeline_creation\data\dataset.zip'
+
+# Push zip file to MongoDB
+MongoDB.push_zip_to_mongodb(config, zip_file_path)

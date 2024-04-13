@@ -1,0 +1,16 @@
+import pandas as pd
+import pymongo
+
+# Read Excel file into DataFrame
+df = pd.read_csv(r"C:\Users\subha\nlp_pipeline_creation\data\raw_data.csv")
+
+# Convert DataFrame to list of dictionaries
+data = df.to_dict(orient='records')
+
+# Connect to MongoDB
+client = pymongo.MongoClient("mongodb+srv://subha:Sugan0510@cluster0.f05of.mongodb.net/")
+db = client["nlp"]
+collection = db["hatespeech"]
+
+# Insert data into MongoDB
+collection.insert_many(data)

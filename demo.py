@@ -1,13 +1,16 @@
-from hatespeechclassification.logger import logging
-from hatespeechclassification.exception import CustomException
+import os
 import sys
+from hatespeechclassification.configuration.mongodb import MongoDB
 
-#logging.info('demo logs')
+econfig = {
+    "mongo_uri": "mongodb+srv://subha:Sugan0510@cluster0.f05of.mongodb.net",
+    "db_name": "nlp",
+}
+zip_file_name = "my_zip_file.zip"
+destination_dir = r"C:\Users\subha\nlp_pipeline_creation\downloads"
 
-try:
-    x=7/'0'
-except Exception as e:
-    raise  CustomException(e , sys) from e
+MongoDB.extract_zip_from_mongodb(econfig, zip_file_name, destination_dir)
+
 
 
 
