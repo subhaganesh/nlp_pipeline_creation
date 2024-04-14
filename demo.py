@@ -1,9 +1,10 @@
 import os
 import sys
 from hatespeechclassification.configuration.mongodb import MongoDB
+from mongourl import mongodb_url
 
 econfig = {
-    "mongo_uri": "mongodb+srv://subha:Sugan0510@cluster0.f05of.mongodb.net",
+    "mongo_uri": mongodb_url,
     "db_name": "nlp",
 }
 zip_file_name = "my_zip_file.zip"

@@ -6,9 +6,9 @@ import zipfile
 
 class MongoDB:    
     @staticmethod
-    def push_zip_to_mongodb(config, zip_file_path):
-        client = pymongo.MongoClient(config['mongo_uri'])
-        db = client[config["db_name"]]
+    def push_zip_to_mongodb(mongo_uri, db_name, zip_file_path):
+        client = pymongo.MongoClient(mongo_uri)
+        db = client[db_name]
         fs = GridFS(db)
 
         with open(zip_file_path, 'rb') as f:
@@ -18,10 +18,10 @@ class MongoDB:
 
     
     @staticmethod
-    def extract_zip_from_mongodb(econfig, zip_file_name, destination_dir):
+    def extract_zip_from_mongodb(mongo_uri, db_name, zip_file_name, destination_dir):
         # Connect to MongoDB
-        client = pymongo.MongoClient(econfig['mongo_uri'])
-        db = client[econfig['db_name']]
+        client = pymongo.MongoClient(mongo_uri)
+        db = client[db_name]
         fs = GridFS(db)
 
         # Find the zip file in GridFS
