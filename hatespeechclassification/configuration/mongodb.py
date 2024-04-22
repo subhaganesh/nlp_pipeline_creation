@@ -3,6 +3,7 @@ from gridfs import GridFS
 import os
 import tempfile
 import zipfile
+from hatespeechclassification.logger import logging
 
 class MongoDB:    
     @staticmethod
@@ -49,6 +50,8 @@ class MongoDB:
             # Clean up the temporary directory
             os.rmdir(temp_dir)
 
-            print("Zip file extracted and files moved to destination directory.")
+            logging.info("6-Zip file extracted and files moved to destination directory.")
         else:
-            print("Zip file not found in MongoDB GridFS.")
+            logging.info("6-Zip file not found in MongoDB GridFS.")
+
+   

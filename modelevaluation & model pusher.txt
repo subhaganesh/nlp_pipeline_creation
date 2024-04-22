@@ -1,0 +1,290 @@
+#constants
+# Model  Evaluation constants
+MODEL_EVALUATION_ARTIFACTS_DIR = 'ModelEvaluationArtifacts'
+BEST_MODEL_DIR = "best_Model"
+MODEL_EVALUATION_FILE_NAME = 'loss.csv'
+
+
+MODEL_NAME = 'model.h5'
+APP_HOST = "0.0.0.0"
+APP_PORT = 8080
+
+#config_entity
+@dataclass
+class ModelEvaluationConfig: 
+    def __init__(self):
+        self.MODEL_EVALUATION_MODEL_DIR: str = os.path.join(os.getcwd(),ARTIFACTS_DIR, MODEL_EVALUATION_ARTIFACTS_DIR)
+        self.BEST_MODEL_DIR_PATH: str = os.path.join(self.MODEL_EVALUATION_MODEL_DIR,BEST_MODEL_DIR)
+        self.COLLECTION_NAME = 'fs.files' 
+        self.MODEL_NAME = MODEL_NAME
+
+@dataclass
+class ModelPusherConfig:
+
+    def __init__(self):
+        self.TRAINED_MODEL_PATH = os.path.join(os.getcwd(),ARTIFACTS_DIR, MODEL_TRAINER_ARTIFACTS_DIR)
+        self.COLLECTION_NAME = 'fs.files'
+        self.MODEL_NAME = MODEL_NAME
+
+#artifact_entity
+@dataclass
+class ModelEvaluationArtifacts:
+    is_model_accepted: bool 
+
+@dataclass
+class ModelPusherArtifacts:
+    COLLECTION_NAME: str
+
+#components
+  #MODEL_EVALUATION
+import os
+import sys
+import keras
+import pickle
+import numpy as np
+import pandas as pd
+from hatespeechclassification.logger import logging
+from hatespeechclassification.exception import CustomException
+from keras.utils import pad_sequences
+from hatespeechclassification.constants import *
+#from hatespeechclassification.ml.model import ModelArchitecture
+from hatespeechclassification.configuration.mongodb import MongoDB
+#from keras.preprocessing.text import Tokenizer
+from sklearn.metrics import confusion_matrix
+from hatespeechclassification.entity.config_entity import ModelEvaluationConfig
+from hatespeechclassification.entity.artifact_entity import ModelEvaluationArtifacts, ModelTrainerArtifacts, DataTransformationArtifacts
+
+
+class ModelEvaluation:
+    def __init__(self, model_evaluation_config: ModelEvaluationConfig,
+                 model_trainer_artifacts: ModelTrainerArtifacts,
+                 data_transformation_artifacts: DataTransformationArtifacts):
+        """
+        :param model_evaluation_config: Configuration for model eva            model = model_architecture.get_model()
+ data transformation artifact stage
+        :param model_trainer_artifacts: Output reference of model trainer artifact stage
+        """
+
+        self.model_evaluation_config = model_evaluation_config
+        self.model_trainer_artifacts = model_trainer_artifacts
+        self.data_transformation_artifacts = data_transformation_artifacts
+        self.mongodb= MongoDB()
+
+
+    
+    def get_best_model_from_mongodb(self) -> str:
+        """
+        :return: Fetch best model from mongodb storage and store inside best model directory path
+        """
+        try:
+            logging.info("Entered the get_best_model_from_mongodb method of Model Evaluation class")
+
+            os.makedirs(self.model_evaluation_config.BEST_MODEL_DIR_PATH, exist_ok=True)
+
+            self.mongodb.extract_zip_from_mongodb(self.model_evaluation_config.COLLECTION_NAME,
+                                                self.model_evaluation_config.MODEL_NAME,
+                                                self.model_evaluation_config.BEST_MODEL_DIR_PATH,
+                                                self.model_evaluation_config.MODEL_EVALUATION_MODEL_DIR)
+
+            best_model_path = os.path.join(self.model_evaluation_config.BEST_MODEL_DIR_PATH,
+                                           self.model_evaluation_config.MODEL_NAME)
+            logging.info("Exited the get_best_model_from_mongodb method of Model Evaluation class")
+            return best_model_path
+        except Exception as e:
+            raise CustomException(e, sys) from e 
+        
+
+    
+    def evaluate(self):
+        """
+
+        :param model: Currently trained model or best model from mongodb storage
+        :param data_loader: Data loader for validation dataset
+        :return: loss
+        """
+        try:
+            logging.info("Entering into to the evaluate function of Model Evaluation class")
+            print(self.model_trainer_artifacts.x_test_path)
+
+            x_test = pd.read_csv(self.model_trainer_artifacts.x_test_path,index_col=0)
+            print(x_test)
+            y_test = pd.read_csv(self.model_trainer_artifacts.y_test_path,index_col=0)
+
+            with open('tokenizer.pickle', 'rb') as handle:
+                tokenizer = pickle.load(handle)
+
+            load_model=keras.models.load_model(self.model_trainer_artifacts.trained_model_path)
+
+            x_test = x_test['tweet'].astype(str)
+
+            x_test = x_test.squeeze()
+            y_test = y_test.squeeze()
+
+            test_sequences = tokenizer.texts_to_sequences(x_test)
+            test_sequences_matrix = pad_sequences(test_sequences,maxlen=MAX_LEN)
+            print(f"----------{test_sequences_matrix}------------------")
+
+            print(f"-----------------{x_test.shape}--------------")
+            print(f"-----------------{y_test.shape}--------------")
+            accuracy = load_model.evaluate(test_sequences_matrix,y_test)
+            logging.info(f"the test accuracy is {accuracy}")
+
+            lstm_prediction = load_model.predict(test_sequences_matrix)
+            res = []
+            for prediction in lstm_prediction:
+                if prediction[0] < 0.5:
+                    res.append(0)
+                else:
+                    res.append(1)
+            print(confusion_matrix(y_test,res))
+            logging.info(f"the confusion_matrix is {confusion_matrix(y_test,res)} ")
+            return accuracy
+        except Exception as e:
+            raise CustomException(e, sys) from e
+        
+
+    
+    def initiate_model_evaluation(self) -> ModelEvaluationArtifacts:
+        """
+            Method Name :   initiate_model_evaluation
+            Description :   This function is used to initiate all steps of the model evaluation
+
+            Output      :   Returns model evaluation artifact
+            On Failure  :   Write an exception log and then raise an exception
+        """
+        logging.info("Initiate Model Evaluation")
+        try:
+
+            logging.info("Loading currently trained model")
+            trained_model=keras.models.load_model(self.model_trainer_artifacts.trained_model_path)
+            with open('tokenizer.pickle', 'rb') as handle:
+                load_tokenizer = pickle.load(handle)
+
+            trained_model_accuracy = self.evaluate()
+
+            logging.info("Fetch best model from mongodb storage")
+            best_model_path = self.get_best_model_from_mongodb()
+
+            logging.info("Check is best model present in the mongodb storage or not ?")
+            if os.path.isfile(best_model_path) is False:
+                is_model_accepted = True
+                logging.info("mongodb storage model is false and currently trained model accepted is true")
+
+            else:
+                logging.info("Load best model fetched from mongodb storage")
+                best_model=keras.models.load_model(best_model_path)
+                best_model_accuracy= self.evaluate()
+
+                logging.info("Comparing loss between best_model_loss and trained_model_loss ? ")
+                if best_model_accuracy > trained_model_accuracy:
+                    is_model_accepted = True
+                    logging.info("Trained model not accepted")
+                else:
+                    is_model_accepted = False
+                    logging.info("Trained model accepted")
+
+            model_evaluation_artifacts = ModelEvaluationArtifacts(is_model_accepted=is_model_accepted)
+            logging.info("Returning the ModelEvaluationArtifacts")
+            return model_evaluation_artifacts
+
+        except Exception as e:
+            raise CustomException(e, sys) from e
+
+  #model_pusher
+import sys
+from hatespeechclassification.logger import logging
+from hatespeechclassification.exception import CustomException
+from hatespeechclassification.configuration.mongodb import MongoDB
+from hatespeechclassification.entity.config_entity import ModelPusherConfig
+from hatespeechclassification.entity.artifact_entity import ModelPusherArtifacts
+
+class ModelPusher:
+    def __init__(self, model_pusher_config: ModelPusherConfig):
+        """
+        :param model_pusher_config: Configuration for model pusher
+        """
+        self.model_pusher_config = model_pusher_config
+        self.mongodb= MongoDB()
+
+    
+    
+    def initiate_model_pusher(self) -> ModelPusherArtifacts:
+        """
+            Method Name :   initiate_model_pusher
+            Description :   This method initiates model pusher.
+
+            Output      :    Model pusher artifact
+        """
+        logging.info("Entered initiate_model_pusher method of ModelTrainer class")
+        try:
+            # Uploading the model to mongo storage
+
+            self.mongodb.push_zip_to_mongodb(self.model_pusher_config.COLLECTION_NAME,
+                                            self.model_pusher_config.TRAINED_MODEL_PATH,
+                                            self.model_pusher_config.MODEL_NAME)
+
+            logging.info("Uploaded best model to mongodb storage")
+
+            # Saving the model pusher artifacts
+            model_pusher_artifact = ModelPusherArtifacts(
+                bucket_name=self.model_pusher_config.COLLECTION_NAME
+            )
+            logging.info("Exited the initiate_model_pusher method of ModelTrainer class")
+            return model_pusher_artifact
+
+        except Exception as e:
+            raise CustomException(e, sys) from e
+
+ #prediction_pipeline
+from hatespeechclassification.components.model_evaluation import ModelEvaluation
+from hatespeechclassification.components.model_pusher import ModelPusher
+
+
+                                                           ModelEvaluationConfig,
+                                                           ModelPusherConfig)
+
+                                                           ModelEvaluationArtifacts,
+                                                           ModelPusherArtifacts)
+
+
+                                                          self.model_evaluation_config =ModelEvaluationConfig()
+                                                          self.model_pusher_config = ModelPusherConfig()
+
+    def start_model_evaluation(self, model_trainer_artifacts: ModelTrainerArtifacts, data_transformation_artifacts: DataTransformationArtifacts) -> ModelEvaluationArtifacts:
+        logging.info("Entered the start_model_evaluation method of TrainPipeline class")
+        try:
+            model_evaluation = ModelEvaluation(data_transformation_artifacts = data_transformation_artifacts,
+                                                model_evaluation_config=self.model_evaluation_config,
+                                                model_trainer_artifacts=model_trainer_artifacts)
+
+            model_evaluation_artifacts = model_evaluation.initiate_model_evaluation()
+            logging.info("Exited the start_model_evaluation method of TrainPipeline class")
+            return model_evaluation_artifacts
+
+        except Exception as e:
+            raise CustomException(e, sys) from e 
+
+
+    def start_model_pusher(self) -> ModelPusherArtifacts:
+        logging.info("Entered the start_model_pusher method of TrainPipeline class")
+        try:
+            model_pusher = ModelPusher(
+                model_pusher_config=self.model_pusher_config,
+            )
+            model_pusher_artifact = model_pusher.initiate_model_pusher()
+            logging.info("Initiated the model pusher")
+            logging.info("Exited the start_model_pusher method of TrainPipeline class")
+            return model_pusher_artifact
+
+        except Exception as e:
+            raise CustomException(e, sys) from e  
+
+ model_evaluation_artifacts = self.start_model_evaluation(model_trainer_artifacts=model_trainer_artifacts,
+                                                                    data_transformation_artifacts=data_transformation_artifacts
+            ) 
+
+ if not model_evaluation_artifacts.is_model_accepted:
+     raise Exception("Trained model is not better than the best model")
+            
+model_pusher_artifacts = self.start_model_pusher()
+
